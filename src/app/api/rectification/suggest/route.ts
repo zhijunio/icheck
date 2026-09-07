@@ -3,11 +3,14 @@ import { getAiConfig } from "../../ai-config";
 
 const maxImageDataLength = 8_000_000;
 
-const systemPrompt = `你是爱巡店的门店整改建议助手。请根据一次巡检中的具体不合格项目，生成可以直接执行的整改方案。
+const systemPrompt = `你是爱巡店的门店整改建议助手。请根据巡检项目要求和现场图片，针对一次巡检中的具体不合格项目，生成可以直接执行的整改方案。
 
 规则：
-- 只根据输入中的问题生成建议，不得臆测设备、责任人或不存在的现场事实。
-- 必须同时参考巡检项目要求和提供的现场图片；先判断图片中可见的具体问题，再给出与该巡检项目要求对应的整改动作。
+- “item” 是巡检项目的原始要求，不是普通标题；整改方案必须直接回应这条要求。
+- 必须同时参考巡检项目要求、AI 图片分析结果和提供的现场图片；先核对图片中可见的具体问题，再给出与巡检项目要求对应的整改动作。
+- 必须说明整改动作如何使该巡检项目重新达到要求，不能只重复现场问题或给出通用清洁建议。
+- 现场图片优先于文字描述；如果文字描述与图片不一致，只采纳图片中确实可见的内容，并说明证据限制。
+- 只根据输入中的信息生成建议，不得臆测设备、责任人或不存在的现场事实。
 - 图片证据不足或无法确认时，要在建议中明确说明需要补充什么现场证据，不要编造图片中不可见的事实。
 - 巡检人的最终判定为不合格，AI 只负责建议整改动作。
 - 建议要具体，优先说明立即处理动作、风险控制和复核方式。
@@ -56,7 +59,7 @@ export async function POST(request: Request) {
     const response = await fetch(config.apiUrl, {
       method: "POST",
       headers: { Authorization: `Bearer ${config.apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: config.model, messages: [{ role: "system", content: systemPrompt }, { role: "user", content: [{ type: "text", text: JSON.stringify({ store: input.store, scenario: input.scenario, area: input.area, item: input.item, aiReason: input.aiReason, humanResult: input.humanResult, photoCount: input.photos.length }) }, ...input.photos.map((image) => ({ type: "image_url", image_url: { url: image } }))] }], max_completion_tokens: 1_000 }),
+      body: JSON.stringify({ model: config.model, messages: [{ role: "system", content: systemPrompt }, { role: "user", content: [{ type: "text", text: JSON.stringify({ store: input.store, scenario: input.scenario, area: input.area, item: input.item, itemRequirement: input.item, aiReason: input.aiReason, humanResult: input.humanResult, photoCount: input.photos.length, evidenceRule: "请逐张查看以下现场图片，并只依据图片中可见内容生成整改建议。" }) }, ...input.photos.map((image) => ({ type: "image_url", image_url: { url: image } }))] }], max_completion_tokens: 1_000 }),
       signal: controller.signal,
     });
     if (!response.ok) return NextResponse.json({ error: "AI 整改建议服务暂时不可用，请稍后重试。" }, { status: 502 });

@@ -1,11 +1,11 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AiReport, Analysis, DemoTask, useDemoTask } from "../demo-task-context";
 import { defaultInspectionAreas, InspectionArea } from "../demo-data";
 import { formatShanghaiTime } from "../time";
+import { ImagePreview } from "../image-preview";
 
 const results = [
   { area: "入口及前场", item: "入口通道是否畅通", result: "PASS", detail: "未发现明显障碍物。", areaIndex: 0, itemIndex: 0 },
@@ -173,19 +173,34 @@ export default function ResultsPage() {
 
   if (currentTask?.status !== "已完成") return <EmptyResults canContinue={Boolean(currentTask && currentTask.status !== "已取消")} completedTasks={completedTasks} onSelectTask={setCurrentTask} status={currentTask ? taskStatus : "未选择任务"} />;
 
-  return <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
-    <header>
-      <p className="text-sm font-semibold text-teal-700">结果与整改</p>
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-4"><div><h1 className="text-3xl font-semibold text-slate-950">本次巡检结果</h1><p className="mt-2 text-sm text-slate-500">{taskStore} · {taskScenario} · 执行人：{taskAssignee}{taskExecutionTime && ` · 计划执行时间：${formatTaskTime(taskExecutionTime)}`}</p><p className="mt-1 text-xs text-slate-400">{currentTask.startedAt ? `实际开始：${formatTaskTime(currentTask.startedAt)}` : "实际开始：暂无记录"}{currentTask.completedAt ? ` · 实际完成：${formatTaskTime(currentTask.completedAt)}` : " · 实际完成：进行中"}</p></div><div className="flex flex-wrap items-center gap-3"><ResultBanner result={inspectionResult} status={taskStatus} /><div className="flex gap-2 print:hidden"><button className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-600 hover:border-teal-300 hover:text-teal-700" onClick={printReport} type="button">打印报告</button><button className="rounded-lg bg-teal-700 px-3 py-2.5 text-sm font-medium text-white hover:bg-teal-800" onClick={exportCsv} type="button">导出 CSV</button></div></div></div>
+  return <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+    {completedTasks.length > 1 && <div className="print:hidden"><ResultTaskPicker currentTaskId={currentTask.id} onSelectTask={setCurrentTask} tasks={completedTasks} /></div>}
+    <div className="print-report">
+    <header className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
+      <div className="flex flex-wrap items-start justify-between gap-5">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-teal-700">结果与整改</p>
+          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">本次巡检结果</h1>
+          <p className="mt-3 text-sm text-slate-600">{taskStore} · {taskScenario} · 执行人：{taskAssignee}</p>
+          <p className="mt-1 text-xs leading-5 text-slate-400">{taskExecutionTime ? `计划执行：${formatTaskTime(taskExecutionTime)} · ` : ""}{currentTask.startedAt ? `开始：${formatTaskTime(currentTask.startedAt)}` : "开始：暂无记录"}{currentTask.completedAt ? ` · 完成：${formatTaskTime(currentTask.completedAt)}` : " · 完成：进行中"}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <ResultBanner result={inspectionResult} status={taskStatus} />
+          <div className="flex gap-2 print:hidden">
+            <button className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-600 hover:border-teal-300 hover:text-teal-700" onClick={printReport} type="button">打印报告</button>
+            <button className="rounded-lg bg-teal-700 px-3 py-2.5 text-sm font-medium text-white hover:bg-teal-800" onClick={exportCsv} type="button">导出 CSV</button>
+          </div>
+        </div>
+      </div>
     </header>
-    {completedTasks.length > 1 && <ResultTaskPicker currentTaskId={currentTask.id} onSelectTask={setCurrentTask} tasks={completedTasks} />}
-
-    <section className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-5"><Stat label="巡检项目" value={String(inspectedResults.length)} tone="slate" /><Stat label="巡检人判定合格" value={String(passed.length)} tone="teal" /><Stat label="巡检人判定不合格" value={String(failed.length)} tone="rose" /><Stat label="已判定进度" value={`${confirmedCount} / ${inspectedResults.length}`} tone="amber" /><Stat label="总计花费时间" value={totalDuration} tone="slate" /></section>
+    <section className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5"><Stat label="巡检项目" value={String(inspectedResults.length)} tone="slate" /><Stat label="判定合格" value={String(passed.length)} tone="teal" /><Stat label="判定不合格" value={String(failed.length)} tone="rose" /><Stat label="已判定进度" value={`${confirmedCount} / ${inspectedResults.length}`} tone="amber" /><Stat label="总计花费时间" value={totalDuration} tone="slate" /></section>
+    <ResultOverview confirmedCount={confirmedCount} failed={failed} total={inspectedResults.length} unknownCount={unknown.length} />
     <AIAnalysis aiReport={aiReport} aiReportError={aiReportError} aiReportLoading={aiReportLoading} duration={totalDuration} failed={failed} onRetry={() => setReportAttempt((attempt) => attempt + 1)} path={visitedAreaNames} passedCount={passed.length} total={inspectedResults.length} unknownCount={unknown.length} />
 
-    <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8"><div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-semibold text-slate-950">项目结果</h2><p className="mt-1 text-sm text-slate-500">巡检过程中已由巡检人逐项判定，以下为最终结果。</p></div><span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600">{confirmedCount} / {inspectedResults.length} 已判定</span></div><div className="mt-6 space-y-6">{areaGroups.map(([areaIndex, area]) => <div key={areaIndex}><div className="flex items-center gap-3"><h3 className="font-semibold text-slate-900">{area}</h3><span className="h-px flex-1 bg-slate-100" /></div><div className="mt-3 space-y-3">{inspectedResults.filter((item) => item.areaIndex === areaIndex).map((item) => <ResultItemCard item={item} key={`${item.areaIndex}:${item.itemIndex}`} />)}</div></div>)}</div></section>
+    <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7"><div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-sm font-semibold text-teal-700">逐项记录</p><h2 className="mt-1 text-lg font-semibold text-slate-950">巡检项目结果</h2><p className="mt-1 text-sm text-slate-500">巡检过程中已由巡检人逐项判定，图片可点击查看原图。</p></div><span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600">{confirmedCount} / {inspectedResults.length} 已判定</span></div><div className="mt-6 space-y-7">{areaGroups.map(([areaIndex, area]) => <div key={areaIndex}><div className="flex items-center gap-3"><span className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-100 text-xs font-semibold text-slate-500">{areaIndex + 1}</span><h3 className="font-semibold text-slate-900">{area}</h3><span className="h-px flex-1 bg-slate-100" /></div><div className="mt-3 space-y-3">{inspectedResults.filter((item) => item.areaIndex === areaIndex).map((item) => <ResultItemCard item={item} key={`${item.areaIndex}:${item.itemIndex}`} />)}</div></div>)}</div></section>
 
-    {failed.length > 0 && <section className="mt-6 rounded-2xl border border-rose-100 bg-rose-50/50 p-6 sm:p-8"><div className="flex flex-wrap items-center justify-between gap-4"><div><p className="text-sm font-semibold text-rose-700">整改闭环</p><h2 className="mt-1 text-xl font-semibold text-slate-950">已创建 {failed.length} 个整改项目</h2><p className="mt-2 text-sm text-slate-600">不合格项目已进入整改页面，整改建议由 AI 辅助生成。</p></div><Link className="shrink-0 rounded-lg bg-rose-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-rose-800" href="/rectifications">进入整改页面</Link></div></section>}
+    {failed.length > 0 && <section className="mt-6 rounded-2xl border border-rose-100 bg-rose-50/50 p-6 sm:p-8"><div className="flex flex-wrap items-center justify-between gap-4"><div><p className="text-sm font-semibold text-rose-700">整改闭环</p><h2 className="mt-1 text-xl font-semibold text-slate-950">已创建 {failed.length} 个整改项目</h2><p className="mt-2 text-sm text-slate-600">不合格项目已进入整改页面，整改建议由 AI 辅助生成。</p></div><Link className="shrink-0 rounded-lg bg-rose-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-rose-800 print:hidden" href="/rectifications">进入整改页面</Link></div></section>}
+    </div>
   </main>;
 }
 
@@ -200,17 +215,32 @@ function ResultLoadingState() {
 }
 
 function ResultTaskPicker({ currentTaskId, onSelectTask, tasks }: { currentTaskId?: number; onSelectTask: (task: DemoTask) => void; tasks: DemoTask[] }) {
-  return <div className="mt-6 space-y-2 text-left"><p className="text-xs font-medium text-slate-500">选择已完成任务</p>{tasks.map((task) => <button className={`flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left text-sm transition ${currentTaskId === task.id ? "border-teal-300 bg-teal-50 text-teal-800" : "border-slate-200 text-slate-700 hover:border-teal-300 hover:bg-teal-50"}`} key={task.id} onClick={() => onSelectTask(task)} type="button"><span className="min-w-0 truncate">{task.store} · {task.template}</span><span className="ml-3 shrink-0 text-xs text-teal-700">查看结果</span></button>)}</div>;
+  return <section className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"><p className="text-xs font-semibold text-slate-500">选择已完成任务</p><div className="mt-3 grid gap-2 sm:grid-cols-2">{tasks.map((task) => <button className={`flex min-w-0 items-center justify-between rounded-xl border px-3 py-3 text-left text-sm transition ${currentTaskId === task.id ? "border-teal-300 bg-teal-50 text-teal-800" : "border-slate-200 text-slate-700 hover:border-teal-300 hover:bg-teal-50"}`} key={task.id} onClick={() => onSelectTask(task)} type="button"><span className="min-w-0 truncate">{task.store} · {task.template}</span><span className="ml-3 shrink-0 text-xs text-teal-700">选择</span></button>)}</div></section>;
 }
 
 function ResultBanner({ result, status }: { result: "合格" | "不合格"; status: string }) {
   const isPassed = result === "合格";
-  return <div className={`rounded-xl border px-4 py-3 ${isPassed ? "border-teal-100 bg-teal-50" : "border-rose-100 bg-rose-50"}`}><p className={`text-xs ${isPassed ? "text-teal-700" : "text-rose-700"}`}>巡检结论</p><p className={`mt-1 text-lg font-semibold ${isPassed ? "text-teal-900" : "text-rose-900"}`}>{result}</p><p className="mt-1 text-xs text-slate-500">任务状态：{status}</p></div>;
+  return <div className={`min-w-32 rounded-xl border px-4 py-3 ${isPassed ? "border-teal-100 bg-teal-50" : "border-rose-100 bg-rose-50"}`}><p className={`text-xs ${isPassed ? "text-teal-700" : "text-rose-700"}`}>巡检结论</p><p className={`mt-1 text-lg font-semibold ${isPassed ? "text-teal-900" : "text-rose-900"}`}>{result}</p><p className="mt-1 text-xs text-slate-500">任务状态：{status}</p></div>;
 }
 
 function Stat({ label, value, tone }: { label: string; value: string; tone: "slate" | "teal" | "amber" | "rose" }) {
   const colors = { slate: "text-slate-900", teal: "text-teal-700", amber: "text-amber-600", rose: "text-rose-600" };
-  return <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><p className="text-sm text-slate-500">{label}</p><strong className={`mt-2 block text-2xl ${colors[tone]}`}>{value}</strong></div>;
+  return <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-sm"><p className="text-xs text-slate-500">{label}</p><strong className={`mt-2 block truncate text-xl font-semibold ${colors[tone]}`} title={value}>{value}</strong></div>;
+}
+
+function ResultOverview({ confirmedCount, failed, total, unknownCount }: { confirmedCount: number; failed: ResultItem[]; total: number; unknownCount: number }) {
+  const progress = total > 0 ? Math.round((confirmedCount / total) * 100) : 0;
+  return <section className="mt-5 grid gap-4 lg:grid-cols-[1.05fr_1fr]">
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+      <div className="flex items-center justify-between gap-3"><div><p className="text-sm font-semibold text-slate-950">判定进度</p><p className="mt-1 text-xs text-slate-500">所有项目均由巡检人完成最终确认</p></div><strong className="text-xl font-semibold text-slate-900">{progress}%</strong></div>
+      <div aria-label={`已判定 ${progress}%`} className="mt-5 h-2 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-valuemax={100} aria-valuemin={0} aria-valuenow={progress}><div className="h-full rounded-full bg-teal-600 transition-all" style={{ width: `${progress}%` }} /></div>
+      <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500"><span><i className="mr-1.5 inline-block size-2 rounded-full bg-teal-500" />已判定 {confirmedCount}</span><span><i className="mr-1.5 inline-block size-2 rounded-full bg-amber-400" />待确认 {unknownCount}</span><span><i className="mr-1.5 inline-block size-2 rounded-full bg-rose-500" />不合格 {failed.length}</span></div>
+    </div>
+    <div className={`rounded-2xl border p-5 shadow-sm sm:p-6 ${failed.length > 0 ? "border-rose-100 bg-rose-50/60" : "border-teal-100 bg-teal-50/60"}`}>
+      <div className="flex items-start justify-between gap-3"><div><p className={`text-sm font-semibold ${failed.length > 0 ? "text-rose-700" : "text-teal-700"}`}>{failed.length > 0 ? "需要优先处理" : "巡检概览"}</p><p className="mt-1 text-xs text-slate-500">{failed.length > 0 ? "以下项目已自动进入整改闭环" : "本次巡检暂未发现需要整改的问题"}</p></div><span className={`text-2xl ${failed.length > 0 ? "text-rose-600" : "text-teal-600"}`}>{failed.length > 0 ? "!" : "✓"}</span></div>
+      {failed.length > 0 ? <div className="mt-4 space-y-2">{failed.slice(0, 3).map((item) => <div className="flex items-center gap-2 rounded-lg border border-rose-100 bg-white/70 px-3 py-2 text-sm text-slate-700" key={`${item.areaIndex}:${item.itemIndex}`}><span className="size-1.5 shrink-0 rounded-full bg-rose-500" /> <span className="truncate">{item.area} · {item.item}</span></div>)}{failed.length > 3 && <p className="text-xs text-rose-700">还有 {failed.length - 3} 个项目需要处理</p>}</div> : <p className="mt-5 text-sm leading-6 text-slate-700">建议继续保留现场图片和人工确认记录，便于后续趋势分析。</p>}
+    </div>
+  </section>;
 }
 
 function AIAnalysis({ aiReport, aiReportError, aiReportLoading, duration, failed, onRetry, path, passedCount, total, unknownCount }: { aiReport: AiReport | null; aiReportError: string; aiReportLoading: boolean; duration: string; failed: ResultItem[]; onRetry: () => void; path: string[]; passedCount: number; total: number; unknownCount: number }) {
@@ -223,7 +253,9 @@ function AIAnalysis({ aiReport, aiReportError, aiReportLoading, duration, failed
 }
 
 function ResultItemCard({ item }: { item: ResultItem }) {
-  return <article className="rounded-xl border border-slate-100 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><h4 className="font-medium text-slate-800">{item.item}</h4><p className="mt-2 text-sm leading-6 text-slate-500">{item.aiAssisted ? "AI 辅助分析" : "巡检记录"}：{item.detail}</p><PhotoGallery photos={item.photos} /></div><ResultBadge result={item.confirmed ?? item.result} /></div><div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400"><span>{item.confirmed ? `巡检人判定：${item.confirmed === "PASS" ? "合格" : "不合格"}` : "尚未由巡检人判定"}</span>{item.confirmedBy && <span>巡检人：{item.confirmedBy}</span>}{item.confirmedAt && <span>判定时间：{formatTaskTime(item.confirmedAt)}</span>}</div></article>;
+  const finalResult = item.confirmed ?? item.result;
+  const accent = finalResult === "FAIL" ? "border-l-rose-500" : finalResult === "PASS" ? "border-l-teal-500" : "border-l-amber-400";
+  return <article className={`rounded-xl border border-slate-200 border-l-4 bg-white p-4 ${accent}`}><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0 flex-1"><h4 className="font-medium text-slate-900">{item.item}</h4><p className="mt-2 text-sm leading-6 text-slate-600"><span className="font-medium text-slate-500">{item.aiAssisted ? "AI 辅助分析" : "巡检记录"}：</span>{item.detail}</p><PhotoGallery photos={item.photos} /></div><ResultBadge result={finalResult} /></div><div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-slate-100 pt-3 text-xs text-slate-400"><span>{item.confirmed ? `巡检人判定：${item.confirmed === "PASS" ? "合格" : "不合格"}` : "尚未由巡检人判定"}</span>{item.confirmedBy && <span>巡检人：{item.confirmedBy}</span>}{item.confirmedAt && <span>判定时间：{formatTaskTime(item.confirmedAt)}</span>}</div></article>;
 }
 
 function ResultBadge({ result }: { result: string }) {
@@ -263,7 +295,7 @@ function formatDuration(startAt?: string, endAt?: string) {
 
 function PhotoGallery({ photos }: { photos: string[] }) {
   if (photos.length === 0) return null;
-  return <div className="mt-3 flex flex-wrap gap-2">{photos.map((photo, index) => <Image alt={`现场图片 ${index + 1}`} className="h-16 w-16 rounded-lg border border-slate-200 object-cover" height={64} key={`${photo}-${index}`} src={photo} unoptimized width={64} />)}</div>;
+  return <div className="mt-3 flex flex-wrap gap-2">{photos.map((photo, index) => <ImagePreview alt={`现场图片 ${index + 1}`} buttonClassName="block h-16 w-16 cursor-zoom-in" className="h-16 w-16 rounded-lg border border-slate-200 object-cover" height={64} key={`${photo}-${index}`} src={photo} unoptimized width={64} />)}</div>;
 }
 
 function mockResult(area: string, itemIndex: number): Analysis["result"] {

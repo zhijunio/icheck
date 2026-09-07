@@ -3,13 +3,16 @@ import { getAiConfig } from "../../ai-config";
 
 const maxImageDataLength = 8_000_000;
 
-const systemPrompt = `你是爱巡店的整改复核助手。请对比整改前和整改后的现场照片，并结合巡检项目要求与验收标准，判断整改是否达到要求。
+const systemPrompt = `你是爱巡店的整改复核助手。请根据巡检时发现的问题、巡检项目要求、验收标准和整改后现场照片，判断问题是否已经完成整改。
 
 规则：
-- 只根据巡检项目要求、验收标准和照片中可见内容判断，不得臆测照片中不可见的事实。
-- result 为 PASS 表示整改后已达到要求，FAIL 表示问题仍存在或未达到要求，UNKNOWN 表示照片不足、模糊或无法完成对比。
-- summary 必须说明对比后观察到的结果和判断依据。
-- recommendation 必须给出下一步建议；PASS 时说明可以通过验收，FAIL 或 UNKNOWN 时说明还需要处理或补充什么证据。
+- “reason” 是巡检时已经发现的问题，必须围绕这个问题判断整改是否完成；不能只判断整改前后照片是否相似。
+- “item” 是巡检项目要求，“acceptanceCriteria” 是验收标准；整改后照片可能有多张，必须逐张查看并综合判断。
+- 巡检现场照片仅用于补充理解问题背景；即使没有巡检现场照片，也要根据问题描述、巡检项目要求、验收标准和整改后照片完成判断。
+- 只根据输入中明确的信息和照片中可见内容判断，不得臆测照片中不可见的事实。
+- result 为 PASS 表示整改后问题已解决且达到验收标准，FAIL 表示问题仍存在或未达到标准，UNKNOWN 表示整改后照片不足、模糊、角度不合适或无法确认。
+- summary 必须说明整改后照片中观察到的事实、与原问题的对应关系和判断依据。
+- recommendation 必须给出下一步建议；PASS 时说明可以通过验收，FAIL 或 UNKNOWN 时说明还需要处理什么或补充什么证据。
 - 只能输出合法 JSON，不要输出 Markdown、代码围栏、解释文字或额外字段。
 
 输出结构：
@@ -24,7 +27,7 @@ type VerificationInput = {
   reason: string;
   acceptanceCriteria: string;
   originalPhotos: string[];
-  rectificationPhoto: string;
+  rectificationPhotos: string[];
 };
 
 type ChatCompletionResponse = {
@@ -56,10 +59,10 @@ export async function POST(request: Request) {
           {
             role: "user",
             content: [
-              { type: "text", text: `${JSON.stringify({ item: input.item, reason: input.reason, acceptanceCriteria: input.acceptanceCriteria })}\n以下为整改前现场照片。` },
+              { type: "text", text: `${JSON.stringify({ item: input.item, issueFoundDuringInspection: input.reason, acceptanceCriteria: input.acceptanceCriteria })}\n以下图片是巡检时的现场照片，用于补充理解原问题。` },
               ...input.originalPhotos.map((image) => ({ type: "image_url", image_url: { url: image } })),
-              { type: "text", text: "以上为整改前照片。下面是整改后照片。" },
-              { type: "image_url", image_url: { url: input.rectificationPhoto } },
+              { type: "text", text: "以下是整改后现场照片。请以这些照片为主要证据，判断巡检时发现的问题是否已完成整改。" },
+              ...input.rectificationPhotos.map((image) => ({ type: "image_url", image_url: { url: image } })),
             ],
           },
         ],
@@ -85,14 +88,14 @@ export async function POST(request: Request) {
 function isVerificationInput(value: unknown): value is VerificationInput {
   if (!value || typeof value !== "object") return false;
   const input = value as Partial<VerificationInput>;
-  return [input.item, input.reason, input.acceptanceCriteria, input.rectificationPhoto].every((field) => typeof field === "string" && field.trim().length > 0 && field.length <= 2_000)
+  return [input.item, input.reason, input.acceptanceCriteria].every((field) => typeof field === "string" && field.trim().length > 0 && field.length <= 2_000)
     && Array.isArray(input.originalPhotos)
-    && input.originalPhotos.length > 0
     && input.originalPhotos.length <= 5
     && input.originalPhotos.every((photo) => typeof photo === "string" && photo.length <= maxImageDataLength && /^data:image\/(?:jpeg|png|webp);base64,/i.test(photo))
-    && typeof input.rectificationPhoto === "string"
-    && input.rectificationPhoto.length <= maxImageDataLength
-    && /^data:image\/(?:jpeg|png|webp);base64,/i.test(input.rectificationPhoto);
+    && Array.isArray(input.rectificationPhotos)
+    && input.rectificationPhotos.length > 0
+    && input.rectificationPhotos.length <= 5
+    && input.rectificationPhotos.every((photo) => typeof photo === "string" && photo.length <= maxImageDataLength && /^data:image\/(?:jpeg|png|webp);base64,/i.test(photo));
 }
 
 function parseVerification(content: string) {

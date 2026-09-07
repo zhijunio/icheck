@@ -1,11 +1,11 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { ChangeEvent, useEffect, useRef, useState } from "react";
 import { Analysis, useDemoTask } from "../../demo-task-context";
 import { AreaSortMode, areaSortModeLabels, defaultInspectionAreas, sortAreaIndexes } from "../../demo-data";
 import { formatShanghaiTime } from "../../time";
+import { ImagePreview } from "../../image-preview";
 
 const maxAreaPhotoCount = 20;
 const maxItemPhotoCount = 5;
@@ -137,10 +137,11 @@ export default function TaskExecutionPage() {
     if (analysisVersion.current !== uploadVersion) return;
     if (uploadedPhotos.length !== filesToUpload.length) setPhotoError("部分图片读取失败，请重新选择后上传。");
     if (!uploadedPhotos.length) return;
-    const nextPhotos = [...currentPhotos, ...uploadedPhotos];
     addItemPhotos(key, uploadedPhotos);
     reopenArea(areaIndex);
-    setAnalysis(key, { result: "UNKNOWN", reason: "已上传现场图片，请由巡检人直接判断。", photoIndexes: nextPhotos.map((_, index) => index) });
+    if (!analyses[key]) {
+      setAnalysis(key, { result: "UNKNOWN", reason: "已上传现场图片，请由巡检人直接判断。" });
+    }
   }
 
   function deleteAreaPhoto(photoIndex: number) {
@@ -159,8 +160,8 @@ export default function TaskExecutionPage() {
     removeItemPhoto(key, photoIndex);
     reopenArea(areaIndex);
     const nextPhotos = (itemPhotos[key] ?? []).filter((_, index) => index !== photoIndex);
-    if (nextPhotos.length) setAnalysis(key, { result: "UNKNOWN", reason: "已上传现场图片，请由巡检人直接判断。", photoIndexes: nextPhotos.map((_, index) => index) });
-    else clearAnalysis(key);
+    if (!analyses[key] && nextPhotos.length) setAnalysis(key, { result: "UNKNOWN", reason: "已上传现场图片，请由巡检人直接判断。" });
+    if (!nextPhotos.length && !analyses[key]?.confidence) clearAnalysis(key);
     setPhotoError("");
   }
 
@@ -209,14 +210,15 @@ export default function TaskExecutionPage() {
     const hasEvidence = allEvidencePhotos.length > 0;
     if (!analysis || !hasEvidence) return;
     const requestVersion = ++rectificationVersion.current;
-    const confirmation = { ...analysis, confirmed: result, confirmedBy: taskAssignee, confirmedAt: new Date().toISOString(), rectificationSuggestion: result === "FAIL" ? createSuggestion(area.name, area.items[itemIndex], analysis.reason) : undefined };
+    const confirmation = { ...analysis, confirmed: result, confirmedBy: taskAssignee, confirmedAt: new Date().toISOString(), rectificationSuggestion: undefined, rectificationSuggestionStatus: result === "FAIL" ? "generating" as const : undefined, rectificationSuggestionError: undefined };
     setAnalysis(key, confirmation);
     if (result === "FAIL") {
       void fetchRectificationSuggestion({ store: taskStore, scenario: taskScenario, area: area.name, item: area.items[itemIndex], aiReason: analysis.reason, photos: allEvidencePhotos, humanResult: "FAIL" }).then((suggestion) => {
         if (rectificationVersion.current !== requestVersion) return;
-        setAnalysis(key, { ...confirmation, rectificationSuggestion: suggestion.suggestion, rectificationPriority: suggestion.priority, rectificationDeadline: suggestion.deadline, rectificationAcceptanceCriteria: suggestion.acceptanceCriteria });
+        setAnalysis(key, { ...confirmation, rectificationSuggestion: suggestion.suggestion, rectificationSuggestionStatus: "generated", rectificationSuggestionError: undefined, rectificationPriority: suggestion.priority, rectificationDeadline: suggestion.deadline, rectificationAcceptanceCriteria: suggestion.acceptanceCriteria });
       }).catch(() => {
-        // The local suggestion remains available when the store network is slow or unavailable.
+        if (rectificationVersion.current !== requestVersion) return;
+        setAnalysis(key, { ...confirmation, rectificationSuggestionStatus: "failed", rectificationSuggestionError: "AI 整改建议生成失败，请重试。" });
       });
     }
   }
@@ -245,7 +247,7 @@ function TaskLoadingState() {
 }
 
 function AreaPhotoPanel({ analyzed, areaName, analyzing, error, maxCount, onAnalyze, onDelete, onUpload, photos, readOnly, unmatchedCount }: { analyzed: boolean; areaName: string; analyzing: boolean; error: string; maxCount: number; onAnalyze: () => void; onDelete: (photoIndex: number) => void; onUpload: (event: ChangeEvent<HTMLInputElement>) => void; photos: string[]; readOnly: boolean; unmatchedCount: number }) {
-  return <div aria-busy={analyzing} className="mt-8 border-t border-slate-100 pt-6"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-sm font-semibold text-slate-800">本区域现场图片</h3><p className="mt-1 text-xs text-slate-400">先上传本区域的多张图片，再点击“开始 AI 分析”统一关联巡检项目。无关图片不会强行分配。</p></div><div className="flex items-center gap-2"><label className={`rounded-lg border px-4 py-2.5 text-sm font-medium ${photos.length >= maxCount || analyzing || readOnly ? "cursor-not-allowed border-slate-200 text-slate-400" : "cursor-pointer border-slate-300 bg-white text-slate-700 hover:border-teal-300 hover:text-teal-700"}`}><span>＋ 上传图片</span><input accept="image/jpeg,image/png,image/webp" className="hidden" disabled={photos.length >= maxCount || analyzing || readOnly} multiple onChange={onUpload} type="file" /></label><button className="rounded-lg bg-teal-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-50" disabled={!photos.length || analyzing || readOnly} onClick={onAnalyze} type="button">{analyzing ? "AI 分析中…" : analyzed ? "重新 AI 分析" : "开始 AI 分析"}</button></div></div>{analyzing && <p className="mt-3 text-xs text-teal-700">图片已保存，正在分析图片对应的巡检项目，请稍候。</p>}{error && <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-700">{error}</p>}<p className="mt-3 text-xs text-slate-400">支持 JPG、PNG、WebP，单张不超过 10 MB；当前区域 {photos.length}/{maxCount} 张。{analyzed && ` 已完成 AI 分析，${unmatchedCount} 张图片未关联到巡检项目。`}</p>{photos.length > 0 && <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">{photos.map((photo, index) => <div className="group relative aspect-square overflow-hidden rounded-xl border border-slate-200 bg-slate-100" key={`${photo}-${index}`}><Image alt={`${areaName}现场图片 ${index + 1}`} className="h-full w-full object-cover" height={320} src={photo} unoptimized width={320} /><button aria-label={`删除第 ${index + 1} 张现场图片`} className="absolute right-2 top-2 rounded-md bg-slate-950/70 px-2 py-1 text-xs text-white opacity-0 transition hover:bg-rose-600 group-hover:opacity-100 focus:opacity-100 disabled:cursor-not-allowed disabled:opacity-50" disabled={analyzing || readOnly} onClick={() => onDelete(index)} type="button">删除</button></div>)}</div>}</div>;
+  return <div aria-busy={analyzing} className="mt-8 border-t border-slate-100 pt-6"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-sm font-semibold text-slate-800">本区域现场图片</h3><p className="mt-1 text-xs text-slate-400">先上传本区域的多张图片，再点击“开始 AI 分析”统一关联巡检项目。无关图片不会强行分配。</p></div><div className="flex items-center gap-2"><label className={`rounded-lg border px-4 py-2.5 text-sm font-medium ${photos.length >= maxCount || analyzing || readOnly ? "cursor-not-allowed border-slate-200 text-slate-400" : "cursor-pointer border-slate-300 bg-white text-slate-700 hover:border-teal-300 hover:text-teal-700"}`}><span>＋ 上传图片</span><input accept="image/jpeg,image/png,image/webp" className="hidden" disabled={photos.length >= maxCount || analyzing || readOnly} multiple onChange={onUpload} type="file" /></label><button className="rounded-lg bg-teal-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-50" disabled={!photos.length || analyzing || readOnly} onClick={onAnalyze} type="button">{analyzing ? "AI 分析中…" : analyzed ? "重新 AI 分析" : "开始 AI 分析"}</button></div></div>{analyzing && <p className="mt-3 text-xs text-teal-700">图片已保存，正在分析图片对应的巡检项目，请稍候。</p>}{error && <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-700">{error}</p>}<p className="mt-3 text-xs text-slate-400">支持 JPG、PNG、WebP，单张不超过 10 MB；当前区域 {photos.length}/{maxCount} 张。{analyzed && ` 已完成 AI 分析，${unmatchedCount} 张图片未关联到巡检项目。`}</p>{photos.length > 0 && <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">{photos.map((photo, index) => <div className="group relative aspect-square overflow-hidden rounded-xl border border-slate-200 bg-slate-100" key={`${photo}-${index}`}><ImagePreview alt={`${areaName}现场图片 ${index + 1}`} buttonClassName="block h-full w-full cursor-zoom-in" className="h-full w-full object-cover" height={320} src={photo} unoptimized width={320} /><button aria-label={`删除第 ${index + 1} 张现场图片`} className="absolute right-2 top-2 rounded-md bg-slate-950/70 px-2 py-1 text-xs text-white opacity-0 transition hover:bg-rose-600 group-hover:opacity-100 focus:opacity-100 disabled:cursor-not-allowed disabled:opacity-50" disabled={analyzing || readOnly} onClick={() => onDelete(index)} type="button">删除</button></div>)}</div>}</div>;
 }
 
 function ProjectItem({ analysis, item, itemIndex, itemPhotos, onConfirm, onDeletePhoto, onUploadPhoto, photos, readOnly }: { analysis?: Analysis; item: string; itemIndex: number; itemPhotos: string[]; onConfirm: (result: "PASS" | "FAIL") => void; onDeletePhoto: (photoIndex: number) => void; onUploadPhoto: (event: ChangeEvent<HTMLInputElement>) => void; photos: string[]; readOnly: boolean }) {
@@ -256,7 +258,7 @@ function ProjectItem({ analysis, item, itemIndex, itemPhotos, onConfirm, onDelet
   const hasEvidence = itemPhotos.length > 0 || matchedPhotos.length > 0;
   const displayLabel = analysis?.confirmed ? `已判定${analysis.confirmed === "PASS" ? "合格" : "不合格"}` : analysis ? labels[analysis.result] : "待上传图片";
 
-  return <div className="rounded-xl border border-slate-100 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><div className="flex items-start gap-3"><span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-teal-500" /><p className="text-sm text-slate-700">{item}</p></div>{analysis && <p className="mt-2 text-xs leading-5 text-slate-500">{analysis.confidence ? `AI 辅助 · ${confidenceLabel(analysis.confidence)}` : "巡检记录"}：{analysis.reason}</p>}</div><span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${displayResult ? colors[displayResult] : "bg-slate-100 text-slate-500"}`}>{displayLabel}</span></div><div className="mt-4"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-xs text-slate-400">本项目手动图片 · {itemPhotos.length}/{maxItemPhotoCount} 张</p><p className="mt-1 text-[11px] text-slate-400">此处上传的图片仅作为人工取证，不调用 AI</p></div><label className={`cursor-pointer rounded-lg border px-3 py-2 text-xs font-medium ${itemPhotos.length >= maxItemPhotoCount || readOnly ? "cursor-not-allowed border-slate-200 text-slate-400" : "border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100"}`}><span>＋ 上传图片</span><input accept="image/jpeg,image/png,image/webp" className="hidden" disabled={itemPhotos.length >= maxItemPhotoCount || readOnly} multiple onChange={onUploadPhoto} type="file" /></label></div>{itemPhotos.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{itemPhotos.map((photo, index) => <div className="group relative h-16 w-16 overflow-hidden rounded-lg border border-slate-200" key={`${photo}-${index}`}><Image alt={`${item}现场图片 ${index + 1}`} className="h-full w-full object-cover" height={64} src={photo} unoptimized width={64} /><button aria-label={`删除${item}第 ${index + 1} 张图片`} className="absolute inset-x-0 bottom-0 bg-slate-950/70 py-1 text-[10px] text-white opacity-0 transition group-hover:opacity-100 focus:opacity-100 disabled:opacity-50" disabled={readOnly} onClick={() => onDeletePhoto(index)} type="button">删除</button></div>)}</div>}</div>{analysis?.confidence && <div className="mt-3">{matchedPhotos.length > 0 ? <><p className="text-xs text-slate-400">AI 关联图片 · {matchedPhotos.length} 张</p><div className="mt-2 flex flex-wrap gap-2">{matchedPhotos.map((photo, index) => <Image alt={`${item}关联图片 ${index + 1}（巡检项 ${itemIndex + 1}）`} className="h-16 w-16 rounded-lg border border-slate-200 object-cover" height={64} key={`${photo}-${index}`} src={photo} unoptimized width={64} />)}</div></> : <p className="text-xs leading-5 text-amber-700">AI 未关联到支持本巡检项的图片，请补充本区域图片后重新分析。</p>}</div>}{analysis?.confirmed ? <p className="mt-3 text-xs text-slate-400">已由{analysis.confirmedBy ?? "巡检人"}判定{analysis.confirmedAt ? ` · ${formatTaskTime(analysis.confirmedAt)}` : ""}</p> : analysis && !readOnly && hasEvidence ? <div className="mt-3 flex flex-wrap gap-2"><button className="rounded-lg border border-teal-200 px-3 py-2 text-xs font-medium text-teal-700 hover:bg-teal-50" onClick={() => onConfirm("PASS")} type="button">判定合格</button><button className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-medium text-rose-700 hover:bg-rose-50" onClick={() => onConfirm("FAIL")} type="button">判定不合格</button></div> : <p className="mt-3 text-xs text-slate-500">{readOnly ? "本次巡检已完成，结果仅供查看。" : analysis && !hasEvidence ? "没有图片证据，暂不能判定。" : "请先上传图片。"}</p>}</div>;
+  return <div className="rounded-xl border border-slate-100 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><div className="flex items-start gap-3"><span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-teal-500" /><p className="text-sm text-slate-700">{item}</p></div>{analysis && <p className="mt-2 text-xs leading-5 text-slate-500">{analysis.confidence ? `AI 辅助 · ${confidenceLabel(analysis.confidence)}` : "巡检记录"}：{analysis.reason}</p>}</div><span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${displayResult ? colors[displayResult] : "bg-slate-100 text-slate-500"}`}>{displayLabel}</span></div><div className="mt-4"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-xs text-slate-400">本项目手动图片 · {itemPhotos.length}/{maxItemPhotoCount} 张</p><p className="mt-1 text-[11px] text-slate-400">此处上传的图片仅作为人工取证，不调用 AI</p></div><label className={`cursor-pointer rounded-lg border px-3 py-2 text-xs font-medium ${itemPhotos.length >= maxItemPhotoCount || readOnly ? "cursor-not-allowed border-slate-200 text-slate-400" : "border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100"}`}><span>＋ 上传图片</span><input accept="image/jpeg,image/png,image/webp" className="hidden" disabled={itemPhotos.length >= maxItemPhotoCount || readOnly} multiple onChange={onUploadPhoto} type="file" /></label></div>{itemPhotos.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{itemPhotos.map((photo, index) => <div className="group relative h-16 w-16 overflow-hidden rounded-lg border border-slate-200" key={`${photo}-${index}`}><ImagePreview alt={`${item}现场图片 ${index + 1}`} buttonClassName="block h-16 w-16 cursor-zoom-in" className="h-full w-full object-cover" height={64} src={photo} unoptimized width={64} /><button aria-label={`删除${item}第 ${index + 1} 张图片`} className="absolute inset-x-0 bottom-0 bg-slate-950/70 py-1 text-[10px] text-white opacity-0 transition group-hover:opacity-100 focus:opacity-100 disabled:opacity-50" disabled={readOnly} onClick={() => onDeletePhoto(index)} type="button">删除</button></div>)}</div>}</div>{analysis?.confidence && <div className="mt-3">{matchedPhotos.length > 0 ? <><p className="text-xs text-slate-400">AI 关联图片 · {matchedPhotos.length} 张</p><div className="mt-2 flex flex-wrap gap-2">{matchedPhotos.map((photo, index) => <ImagePreview alt={`${item}关联图片 ${index + 1}（巡检项 ${itemIndex + 1}）`} buttonClassName="block h-16 w-16 cursor-zoom-in" className="h-16 w-16 rounded-lg border border-slate-200 object-cover" height={64} key={`${photo}-${index}`} src={photo} unoptimized width={64} />)}</div></> : <p className="text-xs leading-5 text-amber-700">AI 未关联到支持本巡检项的图片，请补充本区域图片后重新分析。</p>}</div>}{analysis?.confirmed ? <p className="mt-3 text-xs text-slate-400">已由{analysis.confirmedBy ?? "巡检人"}判定{analysis.confirmedAt ? ` · ${formatTaskTime(analysis.confirmedAt)}` : ""}</p> : analysis && !readOnly && hasEvidence ? <div className="mt-3 flex flex-wrap gap-2"><button className="rounded-lg border border-teal-200 px-3 py-2 text-xs font-medium text-teal-700 hover:bg-teal-50" onClick={() => onConfirm("PASS")} type="button">判定合格</button><button className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-medium text-rose-700 hover:bg-rose-50" onClick={() => onConfirm("FAIL")} type="button">判定不合格</button></div> : <p className="mt-3 text-xs text-slate-500">{readOnly ? "本次巡检已完成，结果仅供查看。" : analysis && !hasEvidence ? "没有图片证据，暂不能判定。" : "请先上传图片。"}</p>}</div>;
 }
 function inspectionItemKey(areaIndex: number, itemIndex: number) {
   return `${areaIndex}:${itemIndex}`;
@@ -264,10 +266,6 @@ function inspectionItemKey(areaIndex: number, itemIndex: number) {
 
 function confidenceLabel(confidence: NonNullable<Analysis["confidence"]>) {
   return { high: "高置信度", medium: "中置信度", low: "低置信度" }[confidence];
-}
-
-function createSuggestion(area: string, item: string, reason: string) {
-  return `请立即处理“${area} · ${item}”问题：${reason}完成整改后清理现场，并上传复核图片。`;
 }
 
 type RectificationSuggestion = {

@@ -13,12 +13,18 @@ export type Analysis = {
   confirmedAt?: string;
   confirmationNote?: string;
   rectificationSuggestion?: string;
+  rectificationSuggestionStatus?: "generating" | "generated" | "failed";
+  rectificationSuggestionError?: string;
   rectificationPriority?: "high" | "medium" | "low";
   rectificationDeadline?: string;
   rectificationAcceptanceCriteria?: string;
   rectificationStatus?: "待整改" | "整改中" | "已完成";
   rectificationNote?: string;
+  rectificationPhotoNames?: string[];
+  rectificationPhotos?: string[];
+  /** @deprecated 兼容旧版 localStorage 单图数据。 */
   rectificationPhotoName?: string;
+  /** @deprecated 兼容旧版 localStorage 单图数据。 */
   rectificationPhoto?: string;
   rectificationVerification?: {
     result: "PASS" | "FAIL" | "UNKNOWN";
@@ -62,14 +68,16 @@ export type RectificationItem = {
   item: string;
   itemKey: string;
   reason: string;
-  suggestion: string;
+  suggestion?: string;
+  suggestionStatus?: Analysis["rectificationSuggestionStatus"];
+  suggestionError?: string;
   priority?: Analysis["rectificationPriority"];
   deadline?: string;
   acceptanceCriteria?: string;
   status: Analysis["rectificationStatus"];
   note: string;
-  photoName: string;
-  photo?: string;
+  photoNames: string[];
+  photos: string[];
   originalPhotos: string[];
   verification?: Analysis["rectificationVerification"];
 };
@@ -87,7 +95,7 @@ type DemoTaskContextValue = {
   analyses: Record<string, Analysis>;
   setAnalysis: (itemKey: string, analysis: Analysis) => void;
   clearAnalysis: (itemKey: string) => void;
-  setRectification: (itemKey: string, updates: Partial<Pick<Analysis, "rectificationStatus" | "rectificationNote" | "rectificationPhotoName" | "rectificationPhoto" | "rectificationVerification">>) => void;
+  setRectification: (itemKey: string, updates: Partial<Pick<Analysis, "rectificationStatus" | "rectificationNote" | "rectificationPhotoNames" | "rectificationPhotos" | "rectificationPhotoName" | "rectificationPhoto" | "rectificationVerification" | "rectificationSuggestionStatus" | "rectificationSuggestionError">>) => void;
   completeArea: (areaIndex: number) => void;
   reopenArea: (areaIndex: number) => void;
   setCurrentTask: (task: DemoTask) => void;
@@ -195,7 +203,7 @@ export function DemoTaskProvider({ children }: { children: ReactNode }) {
     });
   }
 
-  function setRectification(itemKey: string, updates: Partial<Pick<Analysis, "rectificationStatus" | "rectificationNote" | "rectificationPhotoName" | "rectificationPhoto" | "rectificationVerification">>) {
+  function setRectification(itemKey: string, updates: Partial<Pick<Analysis, "rectificationStatus" | "rectificationNote" | "rectificationPhotoNames" | "rectificationPhotos" | "rectificationPhotoName" | "rectificationPhoto" | "rectificationVerification" | "rectificationSuggestionStatus" | "rectificationSuggestionError">>) {
     setAnalyses((current) => current[itemKey] ? { ...current, [itemKey]: { ...current[itemKey], ...updates } } : current);
   }
 
@@ -378,15 +386,17 @@ export function DemoTaskProvider({ children }: { children: ReactNode }) {
         item,
         itemKey,
         reason: analysis.reason,
-        suggestion: analysis.rectificationSuggestion ?? "请处理现场问题，完成整改后上传复核图片。",
+        suggestion: analysis.rectificationSuggestion,
+        suggestionStatus: analysis.rectificationSuggestionStatus,
+        suggestionError: analysis.rectificationSuggestionError,
         // Older localStorage records were created before priority was added.
         priority: analysis.rectificationPriority ?? "medium",
         deadline: analysis.rectificationDeadline,
         acceptanceCriteria: analysis.rectificationAcceptanceCriteria,
         status: analysis.rectificationStatus ?? "待整改",
         note: analysis.rectificationNote ?? "",
-        photoName: analysis.rectificationPhotoName ?? "",
-        photo: analysis.rectificationPhoto,
+        photoNames: analysis.rectificationPhotoNames ?? (analysis.rectificationPhotoName ? [analysis.rectificationPhotoName] : []),
+        photos: analysis.rectificationPhotos ?? (analysis.rectificationPhoto ? [analysis.rectificationPhoto] : []),
         originalPhotos,
         verification: analysis.rectificationVerification,
       } satisfies RectificationItem];
