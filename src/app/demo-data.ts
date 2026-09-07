@@ -44,20 +44,20 @@ function aiAreaOrder(name: string) {
 export const demoTemplates: DemoTemplate[] = [
   {
     id: "1",
-    name: "门店日常巡检",
-    scenario: "通用门店 · 关店前巡检",
-    categories: [
-      { name: "入口及前场", items: ["入口通道无杂物和障碍物", "地面无明显垃圾或积水"] },
-      { name: "商品陈列区", items: ["商品陈列整齐且无明显空缺", "商品和货架表面无明显灰尘和污渍"] },
-    ],
-  },
-  {
-    id: "2",
-    name: "服装店营业巡检",
+    name: "服装门店巡检",
     scenario: "服装门店 · 营业中巡检",
     categories: [
       { name: "门店入口", items: ["橱窗和入口区域整洁", "门店标识和灯光正常"] },
       { name: "卖场区域", items: ["商品陈列整齐且无明显空缺", "顾客通道保持畅通"] },
+    ],
+  },
+  {
+    id: "2",
+    name: "门店基础巡检",
+    scenario: "通用门店 · 关店前巡检",
+    categories: [
+      { name: "入口及前场", items: ["入口通道无杂物和障碍物", "地面无明显垃圾或积水"] },
+      { name: "商品陈列区", items: ["商品陈列整齐且无明显空缺", "商品和货架表面无明显灰尘和污渍"] },
     ],
   },
 ];

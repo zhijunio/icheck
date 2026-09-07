@@ -308,7 +308,7 @@ export function DemoTaskProvider({ children }: { children: ReactNode }) {
   function loadDemoCase() {
     const task: DemoTask = {
       id: 900001,
-      template: "门店日常巡检 · 演示案例",
+      template: "服装门店巡检 · 演示案例",
       store: "爱巡店体验门店",
       scenario: "营业中巡检",
       assignee: "演示巡检员",
@@ -323,7 +323,7 @@ export function DemoTaskProvider({ children }: { children: ReactNode }) {
       aiReport: {
         summary: "本次演示完成 4 个巡检项目，巡检人员确认 3 项合格、1 项不合格，整体结果为不合格。",
         efficiency: "本次演示总耗时约 9 分钟，2 个区域均完成取证和人工确认。",
-        path: "入口及前场 → 商品陈列区。实际执行顺序来自本次演示记录。",
+        path: "门店入口 → 卖场区域。实际执行顺序来自本次演示记录。",
         issues: "商品陈列区发现商品陈列存在异常，需要及时整理。",
         improvements: "优先整理商品陈列并上传复核图片；后续可继续使用区域批量拍照减少逐项上传操作。",
       },
@@ -402,12 +402,10 @@ function demoPhoto(area: string, index: number) {
 }
 
 function mergeTemplates(storedTemplates: DemoTemplate[]) {
-  const builtInTemplateIds = new Set(demoTemplates.map((template) => template.id));
   const removedTemplateIds = new Set(["3"]);
+  const builtInTemplateIds = new Set(demoTemplates.map((template) => template.id));
   const customTemplates = storedTemplates.filter((template) => !builtInTemplateIds.has(template.id) && !removedTemplateIds.has(template.id));
-  const storedBuiltInTemplates = storedTemplates.filter((template) => builtInTemplateIds.has(template.id));
-  const storedIds = new Set(storedBuiltInTemplates.map((template) => template.id));
-  return [...storedBuiltInTemplates, ...customTemplates, ...demoTemplates.filter((template) => !storedIds.has(template.id))];
+  return [...demoTemplates, ...customTemplates];
 }
 
 export function useDemoTask() {

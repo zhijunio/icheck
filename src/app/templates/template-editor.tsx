@@ -17,8 +17,8 @@ type TemplateReview = {
 const maxManuscriptSize = 10 * 1024 * 1024;
 
 const promptExamples = [
-  { title: "便利店开店前", prompt: "生成一份便利店开店前巡检模板，只设置 2 个区域、共 4 个巡检项目：入口及前场、商品陈列区，重点检查卫生、陈列和通道。" },
-  { title: "服装店营业中", prompt: "生成一份服装店营业中巡检模板，只设置 2 个区域、共 4 个巡检项目：门店入口、卖场区域，重点检查陈列、卫生和顾客通道。" },
+  { title: "便利店开店前", prompt: "生成一份便利店开店前巡检模板，按门店区域组织巡检项目，重点检查卫生、陈列和通道。" },
+  { title: "服装店营业中", prompt: "生成一份服装店营业中巡检模板，按门店区域组织巡检项目，重点检查陈列、卫生、顾客通道和服务。" },
 ];
 
 export default function TemplateEditor({ editingTemplate, onCancelEdit }: { editingTemplate: DemoTemplate | null; onCancelEdit: () => void }) {
