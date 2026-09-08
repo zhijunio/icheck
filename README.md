@@ -2,7 +2,7 @@
 
 爱巡店是一个面向门店场景的 AI 巡检 Demo。用户可以根据自然语言生成巡检模板，按门店区域执行巡检，同时使用区域级 AI 图片识别和巡检项人工图片取证，最后由巡检人确认结果并形成整改闭环。
 
-当前项目是前端 Demo，数据保存在浏览器 `localStorage` 中。巡检模板生成、巡检图片分析、结果总结、整改建议和模板质量检查均通过服务端接入 AI Router。
+当前项目是前端 Demo，业务状态会通过服务端保存到 SQLite，同时保留浏览器 `localStorage` 作为离线缓存。巡检模板生成、巡检图片分析、结果总结、整改建议和模板质量检查均通过服务端接入 AI Router。
 
 ## 功能
 
@@ -60,6 +60,39 @@ npm run dev
 
 如果端口被占用，Next.js 会自动使用其他可用端口。
 
+### 使用 Docker Compose 启动
+
+```bash
+docker compose up -d --build
+```
+
+应用启动后访问：
+
+```text
+http://localhost:3000
+```
+
+如果本机 3000 端口已被占用，可通过 `ICHECK_PORT` 修改宿主机端口：
+
+```bash
+ICHECK_PORT=3001 docker compose up -d --build
+```
+
+SQLite 数据保存在 Docker Volume `icheck-data` 中。AI 配置可通过环境变量传入：
+
+```bash
+AI_API_KEY="替换为你的 API Key" \
+AI_BASE_URL="https://api.deepseek.com" \
+AI_MODEL="deepseek-v4-pro" \
+docker compose up -d --build
+```
+
+停止服务：
+
+```bash
+docker compose down
+```
+
 ### 生产构建
 
 ```bash
@@ -99,6 +132,8 @@ src/app/
 ├── api/rectification/suggest/ # 服务端整改建议代理
 ├── api/rectification/verify/  # 服务端整改前后图片对比验收代理
 ├── api/template/review/       # 服务端模板质量检查代理
+├── api/state/                 # SQLite 状态读取和保存
+├── api/health/                # 容器健康检查
 ├── demo-data.ts              # Demo 模板、区域排序和示例数据
 ├── demo-task-context.tsx     # Demo 状态、localStorage 持久化和任务进度
 ├── templates/                # 巡检模板列表和编辑
@@ -119,10 +154,10 @@ src/app/
 - 巡检结果总结、基于巡检项目要求和现场照片的整改建议、模板质量检查通过服务端 DeepSeek API 调用环境变量 `AI_MODEL` 指定的模型；AI 不改变巡检人的最终判定。
 - 提交整改完成时将整改前后图片发送给 AI，对比验收标准并保存通过、不通过或无法判断的验收建议；整改状态由用户的完成操作确认，AI 不替代人工决定。
 - AI 推荐路径使用基于区域名称和规则的 Demo 逻辑。
-- 数据仅保存在当前浏览器的 `localStorage` 中。
+- 数据通过 `/api/state` 保存到 SQLite；浏览器 `localStorage` 作为本地缓存，SQLite 文件由 Docker Volume 持久化。
 - 任务页支持加载一条明确标记为“演示案例”的预置任务，用于比赛现场快速展示完整流程。
 - 图片会在浏览器端压缩后保存，清理浏览器数据会导致 Demo 数据丢失。
-- 当前没有独立后端服务、用户认证和真实数据库，仅使用 Next.js Route Handler 代理 AI 请求。
+- 当前没有独立后端服务，数据库由 Next.js Route Handler 访问 SQLite；用户认证仍为 Demo 级别，AI 请求通过 Route Handler 代理。
 
 ## 开发约定
 

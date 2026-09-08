@@ -123,6 +123,22 @@ type TaskProgress = {
   analyses: Record<string, Analysis>;
 };
 
+type PersistedState = {
+  currentTask: DemoTask | null;
+  tasks: DemoTask[];
+  templates: DemoTemplate[];
+  progressByTask: Record<number, TaskProgress>;
+  areaVisitCounts: Record<string, Record<number, number>>;
+};
+
+type StoredState = Partial<PersistedState> & {
+  photos?: Record<number, string[]>;
+  itemPhotos?: Record<string, string[]>;
+  visitedAreas?: number[];
+  completedAreas?: number[];
+  analyses?: Record<string, Analysis>;
+};
+
 const DemoTaskContext = createContext<DemoTaskContextValue | null>(null);
 const storageKey = "icheck-demo-state";
 
@@ -140,54 +156,91 @@ export function DemoTaskProvider({ children }: { children: ReactNode }) {
   const [storageWarning, setStorageWarning] = useState("");
   const [hydrated, setHydrated] = useState(false);
 
-  /* Restore client-only state after hydration. */
-  /* eslint-disable react-hooks/set-state-in-effect */
+  /* Restore the local cache first, then reconcile it with the SQLite snapshot. */
   useEffect(() => {
-    try {
-      const stored = window.localStorage.getItem(storageKey);
-      if (stored) {
-        const state = JSON.parse(stored) as Partial<DemoTaskContextValue> & { progressByTask?: Record<number, TaskProgress> };
-        if (Array.isArray(state.tasks)) setTasks(state.tasks);
-        if (Array.isArray(state.templates)) setTemplates(mergeTemplates(state.templates));
-        if (state.progressByTask && typeof state.progressByTask === "object") setProgressByTask(state.progressByTask);
-        if (state.areaVisitCounts && typeof state.areaVisitCounts === "object") setAreaVisitCounts(state.areaVisitCounts);
-        if (state.currentTask && typeof state.currentTask === "object") {
-          setCurrentTask(state.currentTask);
-          const progress = state.progressByTask?.[state.currentTask.id];
-          if (progress) {
-            setPhotos(progress.photos);
-            setItemPhotos(progress.itemPhotos ?? {});
-            const savedVisitedAreas = progress.visitedAreas ?? [];
-            setVisitedAreas(savedVisitedAreas.length > 0 ? savedVisitedAreas : [0]);
-            setCompletedAreas(progress.completedAreas);
-            setAnalyses(progress.analyses);
-          } else {
-            if (state.photos && typeof state.photos === "object") setPhotos(state.photos);
-            if (state.itemPhotos && typeof state.itemPhotos === "object") setItemPhotos(state.itemPhotos);
-            if (Array.isArray(state.visitedAreas)) setVisitedAreas(state.visitedAreas);
-            if (Array.isArray(state.completedAreas)) setCompletedAreas(state.completedAreas);
-            if (state.analyses && typeof state.analyses === "object") setAnalyses(state.analyses);
-          }
-        }
+    let cancelled = false;
+
+    function applyState(state: StoredState) {
+      if (Array.isArray(state.tasks)) setTasks(state.tasks);
+      if (Array.isArray(state.templates)) setTemplates(mergeTemplates(state.templates));
+      if (state.progressByTask && typeof state.progressByTask === "object") setProgressByTask(state.progressByTask);
+      if (state.areaVisitCounts && typeof state.areaVisitCounts === "object") setAreaVisitCounts(state.areaVisitCounts);
+      if (!state.currentTask || typeof state.currentTask !== "object") return;
+
+      setCurrentTask(state.currentTask);
+      const progress = state.progressByTask?.[state.currentTask.id];
+      if (progress) {
+        setPhotos(progress.photos);
+        setItemPhotos(progress.itemPhotos ?? {});
+        const savedVisitedAreas = progress.visitedAreas ?? [];
+        setVisitedAreas(savedVisitedAreas.length > 0 ? savedVisitedAreas : [0]);
+        setCompletedAreas(progress.completedAreas);
+        setAnalyses(progress.analyses);
+      } else {
+        if (state.photos && typeof state.photos === "object") setPhotos(state.photos);
+        if (state.itemPhotos && typeof state.itemPhotos === "object") setItemPhotos(state.itemPhotos);
+        if (Array.isArray(state.visitedAreas)) setVisitedAreas(state.visitedAreas);
+        if (Array.isArray(state.completedAreas)) setCompletedAreas(state.completedAreas);
+        if (state.analyses && typeof state.analyses === "object") setAnalyses(state.analyses);
       }
-    } catch {
-      // Ignore malformed or unavailable local storage and start with demo data.
     }
-    setHydrated(true);
+
+    async function restore() {
+      let localState: StoredState | null = null;
+      try {
+        const stored = window.localStorage.getItem(storageKey);
+        if (stored) {
+          localState = JSON.parse(stored) as StoredState;
+          if (!cancelled) applyState(localState);
+        }
+      } catch {
+        // Ignore malformed or unavailable local storage and continue with SQLite.
+      }
+
+      try {
+        const response = await fetch("/api/state", { cache: "no-store" });
+        if (!response.ok) throw new Error("SQLite 状态读取失败");
+        const payload = await response.json() as { state?: StoredState | null };
+        if (payload.state) {
+          if (!cancelled) {
+            applyState(payload.state);
+            window.localStorage.setItem(storageKey, JSON.stringify(payload.state));
+          }
+        } else if (localState) {
+          await fetch("/api/state", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ state: localState }) });
+        }
+      } catch {
+        if (!cancelled) setStorageWarning("SQLite 暂时不可用，当前使用浏览器缓存，恢复连接后会自动同步。");
+      }
+
+      if (!cancelled) setHydrated(true);
+    }
+
+    void restore();
+    return () => { cancelled = true; };
   }, []);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   /* This effect synchronizes persistence failures with the UI. */
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!hydrated) return;
+    const storedProgress = currentTask ? { ...progressByTask, [currentTask.id]: { photos, itemPhotos, visitedAreas, completedAreas, analyses } } : progressByTask;
+    const state: PersistedState = { currentTask, tasks, templates, progressByTask: storedProgress, areaVisitCounts };
     try {
-      const storedProgress = currentTask ? { ...progressByTask, [currentTask.id]: { photos, itemPhotos, visitedAreas, completedAreas, analyses } } : progressByTask;
-      window.localStorage.setItem(storageKey, JSON.stringify({ currentTask, tasks, templates, progressByTask: storedProgress, areaVisitCounts }));
+      window.localStorage.setItem(storageKey, JSON.stringify(state));
       setStorageWarning("");
     } catch {
       setStorageWarning("浏览器存储空间不足，当前会话仍可继续，但刷新后可能无法保留全部图片。");
     }
+
+    const syncTimer = window.setTimeout(() => {
+      void fetch("/api/state", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ state }) })
+        .then((response) => {
+          if (!response.ok) throw new Error("SQLite 状态保存失败");
+        })
+        .catch(() => setStorageWarning("SQLite 同步失败，当前会话仍可继续，稍后会重试。"));
+    }, 300);
+    return () => window.clearTimeout(syncTimer);
   }, [analyses, areaVisitCounts, completedAreas, currentTask, hydrated, itemPhotos, photos, progressByTask, tasks, templates, visitedAreas]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
