@@ -216,9 +216,9 @@ export default function TaskExecutionPage() {
       void fetchRectificationSuggestion({ store: taskStore, scenario: taskScenario, area: area.name, item: area.items[itemIndex], aiReason: analysis.reason, photos: allEvidencePhotos, humanResult: "FAIL" }).then((suggestion) => {
         if (rectificationVersion.current !== requestVersion) return;
         setAnalysis(key, { ...confirmation, rectificationSuggestion: suggestion.suggestion, rectificationSuggestionStatus: "generated", rectificationSuggestionError: undefined, rectificationPriority: suggestion.priority, rectificationDeadline: suggestion.deadline, rectificationAcceptanceCriteria: suggestion.acceptanceCriteria });
-      }).catch(() => {
+      }).catch((error) => {
         if (rectificationVersion.current !== requestVersion) return;
-        setAnalysis(key, { ...confirmation, rectificationSuggestionStatus: "failed", rectificationSuggestionError: "AI 整改建议生成失败，请重试。" });
+        setAnalysis(key, { ...confirmation, rectificationSuggestionStatus: "failed", rectificationSuggestionError: error instanceof Error ? error.message : "AI 整改建议生成失败，请重试。" });
       });
     }
   }

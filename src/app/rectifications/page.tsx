@@ -37,12 +37,41 @@ export default function RectificationsPage() {
 }
 
 function RectificationCard({ currentTaskId, item, onOpenTask }: { currentTaskId?: number; item: RectificationItem; onOpenTask: (item: RectificationItem) => void }) {
+  const { setRectification } = useDemoTask();
+  const [generating, setGenerating] = useState(false);
   const isCurrentTask = currentTaskId === item.taskId;
   const statusStyle = item.status === "已完成" ? "bg-teal-50 text-teal-700" : item.status === "整改中" ? "bg-sky-50 text-sky-700" : "bg-amber-50 text-amber-700";
   const priority = item.priority ?? "medium";
   const suggestionText = item.suggestion ?? (item.suggestionStatus === "generating" ? "正在根据巡检项目要求和现场图片生成整改建议…" : item.suggestionError ?? "AI 整改建议暂未生成，请重新执行不合格判定。");
-  return <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-medium text-rose-700">{item.store} · {item.area}</p><div className="mt-1 flex items-center gap-2"><PriorityIcon priority={priority} /><h2 className="font-semibold text-slate-900">{item.item}</h2></div><p className="mt-1 text-xs text-slate-400">{item.scenario} · 执行人：{item.assignee} · 优先级：{priorityLabel(priority)}</p></div><span className={`rounded-full px-3 py-1.5 text-xs font-medium ${statusStyle}`}>{item.status}</span></div><div className="mt-4 grid gap-3 sm:grid-cols-2"><div className="rounded-xl bg-rose-50/70 p-4"><p className="text-xs font-medium text-rose-700">现场问题</p><p className="mt-1 text-sm leading-6 text-slate-700">{item.reason}</p></div><div className="rounded-xl bg-teal-50/70 p-4"><p className="text-xs font-medium text-teal-700">AI 整改建议</p><p className="mt-1 text-sm leading-6 text-slate-700">{suggestionText}</p>{!item.suggestion && <p className="mt-2 text-xs text-amber-700">该内容需由 AI 根据巡检项目要求和现场图片生成。</p>}</div></div>{(item.deadline || item.acceptanceCriteria) && <p className="mt-3 text-xs leading-5 text-slate-500">{item.deadline && `完成时限：${item.deadline}`}{item.acceptanceCriteria && ` · 验收：${item.acceptanceCriteria}`}</p>}{isCurrentTask ? <RectificationEditor item={item} /> : <div className="mt-4 flex justify-end"><button className="rounded-lg border border-teal-200 px-4 py-2.5 text-sm font-medium text-teal-700 hover:bg-teal-50" onClick={() => onOpenTask(item)} type="button">切换任务并处理</button></div>}</article>;
+  async function generateSuggestion() {
+    if (generating || item.suggestionStatus === "generating" || item.originalPhotos.length === 0) return;
+    setGenerating(true);
+    setRectification(item.itemKey, { rectificationSuggestionStatus: "generating", rectificationSuggestionError: undefined });
+    try {
+      const response = await fetch("/api/rectification/suggest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ store: item.store, scenario: item.scenario, area: item.area, item: item.item, aiReason: item.reason, photos: item.originalPhotos, humanResult: "FAIL" }),
+      });
+      const data = await response.json() as Partial<RectificationSuggestion> & { error?: string };
+      if (!response.ok) throw new Error(data.error || "AI 整改建议生成失败，请重试。");
+      if (typeof data.suggestion !== "string" || !["high", "medium", "low"].includes(data.priority ?? "") || typeof data.deadline !== "string" || typeof data.acceptanceCriteria !== "string") throw new Error("AI 未返回有效整改建议。");
+      setRectification(item.itemKey, { rectificationSuggestion: data.suggestion, rectificationSuggestionStatus: "generated", rectificationSuggestionError: undefined, rectificationPriority: data.priority as RectificationSuggestion["priority"], rectificationDeadline: data.deadline, rectificationAcceptanceCriteria: data.acceptanceCriteria });
+    } catch (error) {
+      setRectification(item.itemKey, { rectificationSuggestionStatus: "failed", rectificationSuggestionError: error instanceof Error ? error.message : "AI 整改建议生成失败，请重试。" });
+    } finally {
+      setGenerating(false);
+    }
+  }
+  return <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-medium text-rose-700">{item.store} · {item.area}</p><div className="mt-1 flex items-center gap-2"><PriorityIcon priority={priority} /><h2 className="font-semibold text-slate-900">{item.item}</h2></div><p className="mt-1 text-xs text-slate-400">{item.scenario} · 执行人：{item.assignee} · 优先级：{priorityLabel(priority)}</p></div><span className={`rounded-full px-3 py-1.5 text-xs font-medium ${statusStyle}`}>{item.status}</span></div><div className="mt-4 grid gap-3 sm:grid-cols-2"><div className="rounded-xl bg-rose-50/70 p-4"><p className="text-xs font-medium text-rose-700">现场问题</p><p className="mt-1 text-sm leading-6 text-slate-700">{item.reason}</p></div><div className="rounded-xl bg-teal-50/70 p-4"><p className="text-xs font-medium text-teal-700">AI 整改建议</p><p className="mt-1 text-sm leading-6 text-slate-700">{suggestionText}</p>{!item.suggestion && <><p className="mt-2 text-xs text-amber-700">该内容需由 AI 根据巡检项目要求和现场图片生成。</p><button className="mt-3 rounded-lg border border-teal-200 bg-white px-3 py-2 text-xs font-medium text-teal-700 hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-50" disabled={generating || item.suggestionStatus === "generating" || item.originalPhotos.length === 0} onClick={generateSuggestion} type="button">{generating || item.suggestionStatus === "generating" ? "AI 生成中…" : item.suggestionStatus === "failed" ? "重新生成 AI 整改建议" : "生成 AI 整改建议"}</button>{item.originalPhotos.length === 0 && <p className="mt-2 text-xs text-slate-500">暂无现场图片，无法生成基于图片的整改建议。</p>}</>}</div></div>{(item.deadline || item.acceptanceCriteria) && <p className="mt-3 text-xs leading-5 text-slate-500">{item.deadline && `完成时限：${item.deadline}`}{item.acceptanceCriteria && ` · 验收：${item.acceptanceCriteria}`}</p>}{isCurrentTask ? <RectificationEditor item={item} /> : <div className="mt-4 flex justify-end"><button className="rounded-lg border border-teal-200 px-4 py-2.5 text-sm font-medium text-teal-700 hover:bg-teal-50" onClick={() => onOpenTask(item)} type="button">切换任务并处理</button></div>}</article>;
 }
+
+type RectificationSuggestion = {
+  suggestion: string;
+  priority: "high" | "medium" | "low";
+  deadline: string;
+  acceptanceCriteria: string;
+};
 
 function priorityLabel(priority: NonNullable<RectificationItem["priority"]>) {
   return priority === "high" ? "高" : priority === "medium" ? "中" : "低";

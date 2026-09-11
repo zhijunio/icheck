@@ -49,27 +49,23 @@ export async function POST(request: Request) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 45_000);
   try {
-    const response = await fetch(config.apiUrl, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${config.apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: config.model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          {
-            role: "user",
-            content: [
-              { type: "text", text: `${JSON.stringify({ item: input.item, issueFoundDuringInspection: input.reason, acceptanceCriteria: input.acceptanceCriteria })}\n以下图片是巡检时的现场照片，用于补充理解原问题。` },
-              ...input.originalPhotos.map((image) => ({ type: "image_url", image_url: { url: image } })),
-              { type: "text", text: "以下是整改后现场照片。请以这些照片为主要证据，判断巡检时发现的问题是否已完成整改。" },
-              ...input.rectificationPhotos.map((image) => ({ type: "image_url", image_url: { url: image } })),
-            ],
-          },
-        ],
-        max_completion_tokens: 1_000,
-      }),
-      signal: controller.signal,
+    const requestBody = JSON.stringify({
+      model: config.model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: `${JSON.stringify({ item: input.item, issueFoundDuringInspection: input.reason, acceptanceCriteria: input.acceptanceCriteria })}\n以下图片是巡检时的现场照片，用于补充理解原问题。` },
+            ...input.originalPhotos.map((image) => ({ type: "image_url", image_url: { url: image } })),
+            { type: "text", text: "以下是整改后现场照片。请以这些照片为主要证据，判断巡检时发现的问题是否已完成整改。" },
+            ...input.rectificationPhotos.map((image) => ({ type: "image_url", image_url: { url: image } })),
+          ],
+        },
+      ],
+      max_completion_tokens: 1_000,
     });
+    const response = await fetchWithRetry(config.apiUrl, config.apiKey, requestBody, controller.signal);
     if (!response.ok) return NextResponse.json({ error: "AI 整改复核服务暂时不可用，请稍后重试。" }, { status: 502 });
     const data = await response.json() as ChatCompletionResponse;
     const content = data.choices?.[0]?.message?.content;
@@ -83,6 +79,22 @@ export async function POST(request: Request) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function fetchWithRetry(url: string, apiKey: string, body: string, signal: AbortSignal) {
+  for (let attempt = 0; ; attempt += 1) {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body,
+      signal,
+    });
+    if (response.ok || !isRetryableStatus(response.status) || attempt >= 1) return response;
+  }
+}
+
+function isRetryableStatus(status: number) {
+  return status === 408 || status === 429 || status >= 500;
 }
 
 function isVerificationInput(value: unknown): value is VerificationInput {

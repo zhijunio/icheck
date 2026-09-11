@@ -96,7 +96,8 @@ function parseReview(content: string) {
   const jsonContent = content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
   try {
     const value = JSON.parse(jsonContent) as Partial<{ overall: unknown; summary: unknown; issues: unknown }>;
-    if (value.overall !== "good" && value.overall !== "needs_revision") return null;
+    const overall = value.overall === "needs_review" || value.overall === "needs_improvement" ? "needs_revision" : value.overall;
+    if (overall !== "good" && overall !== "needs_revision") return null;
     if (typeof value.summary !== "string" || !value.summary.trim() || !Array.isArray(value.issues)) return null;
     const issues = value.issues.map((issue) => {
       if (!issue || typeof issue !== "object") return null;
@@ -106,7 +107,7 @@ function parseReview(content: string) {
       if (typeof candidate.type !== "string" || !types.includes(candidate.type) || typeof candidate.severity !== "string" || !severities.includes(candidate.severity) || typeof candidate.category !== "string" || typeof candidate.item !== "string" || typeof candidate.message !== "string" || !candidate.message.trim() || typeof candidate.suggestion !== "string" || !candidate.suggestion.trim()) return null;
       return { type: candidate.type, severity: candidate.severity, category: candidate.category.trim(), item: candidate.item.trim(), message: candidate.message.trim(), suggestion: candidate.suggestion.trim() };
     });
-    return issues.every((issue) => issue !== null) ? { overall: value.overall, summary: value.summary.trim(), issues } : null;
+    return issues.every((issue) => issue !== null) ? { overall, summary: value.summary.trim(), issues } : null;
   } catch {
     return null;
   }

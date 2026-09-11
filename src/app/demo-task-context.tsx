@@ -95,7 +95,7 @@ type DemoTaskContextValue = {
   analyses: Record<string, Analysis>;
   setAnalysis: (itemKey: string, analysis: Analysis) => void;
   clearAnalysis: (itemKey: string) => void;
-  setRectification: (itemKey: string, updates: Partial<Pick<Analysis, "rectificationStatus" | "rectificationNote" | "rectificationPhotoNames" | "rectificationPhotos" | "rectificationPhotoName" | "rectificationPhoto" | "rectificationVerification" | "rectificationSuggestionStatus" | "rectificationSuggestionError">>) => void;
+  setRectification: (itemKey: string, updates: Partial<Pick<Analysis, "rectificationStatus" | "rectificationNote" | "rectificationPhotoNames" | "rectificationPhotos" | "rectificationPhotoName" | "rectificationPhoto" | "rectificationVerification" | "rectificationSuggestion" | "rectificationSuggestionStatus" | "rectificationSuggestionError" | "rectificationPriority" | "rectificationDeadline" | "rectificationAcceptanceCriteria">>) => void;
   completeArea: (areaIndex: number) => void;
   reopenArea: (areaIndex: number) => void;
   setCurrentTask: (task: DemoTask) => void;
@@ -139,6 +139,15 @@ type StoredState = Partial<PersistedState> & {
   analyses?: Record<string, Analysis>;
 };
 
+function normalizeAnalyses(value: Record<string, Analysis>) {
+  return Object.fromEntries(Object.entries(value).map(([key, analysis]) => {
+    const normalized: Analysis = analysis.rectificationSuggestionStatus === "generating"
+      ? { ...analysis, rectificationSuggestionStatus: "failed", rectificationSuggestionError: "AI 整改建议生成已中断，请重新执行不合格判定。" }
+      : analysis;
+    return [key, normalized];
+  })) as Record<string, Analysis>;
+}
+
 const DemoTaskContext = createContext<DemoTaskContextValue | null>(null);
 const storageKey = "icheck-demo-state";
 
@@ -175,13 +184,13 @@ export function DemoTaskProvider({ children }: { children: ReactNode }) {
         const savedVisitedAreas = progress.visitedAreas ?? [];
         setVisitedAreas(savedVisitedAreas.length > 0 ? savedVisitedAreas : [0]);
         setCompletedAreas(progress.completedAreas);
-        setAnalyses(progress.analyses);
+        setAnalyses(normalizeAnalyses(progress.analyses));
       } else {
         if (state.photos && typeof state.photos === "object") setPhotos(state.photos);
         if (state.itemPhotos && typeof state.itemPhotos === "object") setItemPhotos(state.itemPhotos);
         if (Array.isArray(state.visitedAreas)) setVisitedAreas(state.visitedAreas);
         if (Array.isArray(state.completedAreas)) setCompletedAreas(state.completedAreas);
-        if (state.analyses && typeof state.analyses === "object") setAnalyses(state.analyses);
+        if (state.analyses && typeof state.analyses === "object") setAnalyses(normalizeAnalyses(state.analyses));
       }
     }
 
@@ -256,7 +265,7 @@ export function DemoTaskProvider({ children }: { children: ReactNode }) {
     });
   }
 
-  function setRectification(itemKey: string, updates: Partial<Pick<Analysis, "rectificationStatus" | "rectificationNote" | "rectificationPhotoNames" | "rectificationPhotos" | "rectificationPhotoName" | "rectificationPhoto" | "rectificationVerification" | "rectificationSuggestionStatus" | "rectificationSuggestionError">>) {
+  function setRectification(itemKey: string, updates: Partial<Pick<Analysis, "rectificationStatus" | "rectificationNote" | "rectificationPhotoNames" | "rectificationPhotos" | "rectificationPhotoName" | "rectificationPhoto" | "rectificationVerification" | "rectificationSuggestion" | "rectificationSuggestionStatus" | "rectificationSuggestionError" | "rectificationPriority" | "rectificationDeadline" | "rectificationAcceptanceCriteria">>) {
     setAnalyses((current) => current[itemKey] ? { ...current, [itemKey]: { ...current[itemKey], ...updates } } : current);
   }
 

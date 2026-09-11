@@ -61,19 +61,15 @@ export async function POST(request: Request) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 45_000);
   try {
-    const response = await fetch(config.apiUrl, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${config.apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: config.model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: JSON.stringify(input) },
-        ],
-        max_completion_tokens: 2_000,
-      }),
-      signal: controller.signal,
+    const requestBody = JSON.stringify({
+      model: config.model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: JSON.stringify(input) },
+      ],
+      max_completion_tokens: 2_000,
     });
+    const response = await fetchWithRetry(config.apiUrl, config.apiKey, requestBody, controller.signal);
     if (!response.ok) return NextResponse.json({ error: "AI 结果分析服务暂时不可用，请稍后重试。" }, { status: 502 });
     const data = await response.json() as ChatCompletionResponse;
     const content = data.choices?.[0]?.message?.content;
@@ -87,6 +83,22 @@ export async function POST(request: Request) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function fetchWithRetry(url: string, apiKey: string, body: string, signal: AbortSignal) {
+  for (let attempt = 0; ; attempt += 1) {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body,
+      signal,
+    });
+    if (response.ok || !isRetryableStatus(response.status) || attempt >= 1) return response;
+  }
+}
+
+function isRetryableStatus(status: number) {
+  return status === 408 || status === 429 || status >= 500;
 }
 
 function isResultsInput(value: unknown): value is ResultsInput {
